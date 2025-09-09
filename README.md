@@ -1,0 +1,3 @@
+# AndroidOnnxOcrinfrence
+Ill update when this works... 
+right now just a dummy io for the trocr models provided by qualcom (https://aihub.qualcomm.com/models/trocr)
