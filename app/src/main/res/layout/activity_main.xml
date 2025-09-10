@@ -10,5 +10,12 @@
         android:layout_height="wrap_content"
         android:text="Check logs for ONNX inference results"
         android:textSize="18sp" />
-        
+
+    <ImageView
+        android:id="@+id/resultImageView"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:adjustViewBounds="true"
+        android:scaleType="fitCenter"/>
+
 </LinearLayout>

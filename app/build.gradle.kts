@@ -36,13 +36,13 @@ android {
 }
 
 dependencies {
-
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.appcompat)
     implementation(libs.material)
     testImplementation(libs.junit)
     androidTestImplementation(libs.androidx.junit)
     androidTestImplementation(libs.androidx.espresso.core)
+    implementation("org.opencv:opencv:4.9.0")
     implementation("com.microsoft.onnxruntime:onnxruntime-android:1.19.0")
 // your other dependencies...
 }
