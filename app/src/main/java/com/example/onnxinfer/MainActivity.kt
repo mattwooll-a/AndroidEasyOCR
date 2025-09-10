@@ -110,7 +110,7 @@ class MainActivity : AppCompatActivity() {
     private fun runCompleteOCRPipeline() {
         try {
             // Load and process real image
-            val bitmap = assets.open("easydemoupside.png").use {
+            val bitmap = assets.open("demoplateresize.png").use {
                 BitmapFactory.decodeStream(it)
             }
 
@@ -231,8 +231,8 @@ class MainActivity : AppCompatActivity() {
 
 
                 // Create binary masks
-                val textMask = createBinaryMask(textScores, 0.5f)
-                val linkMask = createBinaryMask(linkScores, 0.3f)
+                val textMask = createBinaryMask(textScores, 0.4f)
+                val linkMask = createBinaryMask(linkScores, 0.2f)
 
                 // Apply morphological operations to clean up the masks
                 val cleanedTextMask = applyMorphologicalOperations(textMask)
