@@ -21,10 +21,10 @@ class MainActivity : AppCompatActivity() {
 
     private val textThreshold = 0.8f
     private val linkThreshold = 0.7f
-
+    data class TextResult(val text: String, val confidence: Float)
+    data class RecognitionResult(val box: TextBox, val text: String, val confidence: Float)
     // EasyOCR detector constants
     private val canvasSize = 800
-    private val magRatio =0.76f
     private val imgH = 64 // Recognition model height
 
     companion object {
@@ -110,7 +110,7 @@ class MainActivity : AppCompatActivity() {
     private fun runCompleteOCRPipeline() {
         try {
             // Load and process real image
-            val bitmap = assets.open("demoplateresize.png").use {
+            val bitmap = assets.open("easydemo.png").use {
                 BitmapFactory.decodeStream(it)
             }
 
@@ -132,15 +132,55 @@ class MainActivity : AppCompatActivity() {
 
             val boxedBitmap = drawBoxesOnBitmap(bitmap, textBoxes)
 
-            runOnUiThread {
-                val imageView = findViewById<ImageView>(R.id.resultImageView)
-                imageView.setImageBitmap(boxedBitmap)
-            }
+
             val totalTime = System.currentTimeMillis() - startTime
             Log.d(TAG, "=== EasyOCR RESULTS ===")
             Log.d(TAG, "Total time: ${totalTime}ms")
             Log.d(TAG, "Detected boxes: ${textBoxes.size}")
 
+
+
+            // Step 4: Convert to grayscale for recognition
+            val grayBitmap = convertToGrayscale(bitmap)
+
+            // Step 5: Run recognition on each detected text box
+            val recognitionResults = mutableListOf<RecognitionResult>()
+
+            textBoxes.forEachIndexed { index, box ->
+                try {
+                    Log.d(TAG, "Processing text box ${index + 1}/${textBoxes.size}")
+
+                    // Extract image patch for this text box
+                    val imagePatch = getImagePatch(grayBitmap, box)
+                    runOnUiThread {
+                        val imageView = findViewById<ImageView>(R.id.resultImageView)
+                        imageView.setImageBitmap(imagePatch)
+                    }
+                    // Preprocess for recognition
+                    val recognitionInput = recognizerPreprocess(imagePatch)
+
+                    // Run recognition
+                    val recognitionOutputs = runRecognition(recognitionInput)
+                    recognitionInput.close()
+
+                    // Post-process recognition results
+                    val textResult = recognizerPostprocess(recognitionOutputs)
+                    recognitionOutputs.forEach { it.value.close() }
+
+                    if (textResult.text.isNotBlank() && textResult.confidence > 0.3f) {
+                        recognitionResults.add(
+                            RecognitionResult(box, textResult.text.trim(), textResult.confidence)
+                        )
+                        Log.d(
+                            TAG,
+                            "Recognized: '${textResult.text.trim()}' (confidence: ${textResult.confidence})"
+                        )
+                    }
+
+                } catch (e: Exception) {
+                    Log.e(TAG, "Error processing text box $index: ${e.message}")
+                }
+            }
         } catch (e: Exception) {
             Log.e(TAG, "Complete EasyOCR pipeline failed: ${e.message}")
             e.printStackTrace()
@@ -231,8 +271,8 @@ class MainActivity : AppCompatActivity() {
 
 
                 // Create binary masks
-                val textMask = createBinaryMask(textScores, 0.4f)
-                val linkMask = createBinaryMask(linkScores, 0.2f)
+                val textMask = createBinaryMask(textScores, 0.6f)
+                val linkMask = createBinaryMask(linkScores, 0.4f)
 
                 // Apply morphological operations to clean up the masks
                 val cleanedTextMask = applyMorphologicalOperations(textMask)
@@ -246,8 +286,8 @@ class MainActivity : AppCompatActivity() {
                 // Scale boxes back to original image coordinates
                 textBoxes.addAll(filteredBoxes.map { box ->
                     TextBox(
-                        (box.x1 * ratios.first).toInt(),
-                        (box.y1 * ratios.second).toInt(),
+                        (box.x1 * ratios.first ).toInt(),
+                        (box.y1 * ratios.second ).toInt(),
                         (box.x2 * ratios.first).toInt(),
                         (box.y2 * ratios.second).toInt()
                     )
@@ -416,7 +456,7 @@ class MainActivity : AppCompatActivity() {
         Log.d(TAG, "Original image size: ${bitmap.width}x${bitmap.height}")
 
         // Resize with proper aspect ratio preservation
-        val (resizedImg, ratioW, ratioH) = resizeForDetection(rgbArray, canvasSize, magRatio)
+        val (resizedImg, ratioW, ratioH) = resizeForDetection(rgbArray, canvasSize)
 
         // Normalize using EasyOCR normalization
         val normalizedImg = normalizeMeanVariance(resizedImg)
@@ -443,19 +483,17 @@ class MainActivity : AppCompatActivity() {
         Log.d(TAG, "Preprocessed tensor shape: ${shape.contentToString()}")
         Log.d(TAG, "Resize ratios - W: $ratioW, H: $ratioH")
 
-        return Pair(tensor, Pair(ratioW, ratioH))
+        return Pair(tensor, Pair(ratioW*2, ratioH*2))
     }
 
     private fun resizeForDetection(
         img: Array<Array<IntArray>>,
-        canvasSize: Int,
-        magRatio: Float
+        canvasSize: Int
     ): Triple<Array<Array<FloatArray>>, Float, Float> {
         val originalHeight = img.size
         val originalWidth = img[0].size
 
         // Calculate target dimensions while preserving aspect ratio
-        val targetSize = (canvasSize * magRatio).toInt()
         val ratio = 1f
 
         val newWidth = (originalWidth * ratio).toInt()
@@ -574,10 +612,10 @@ class MainActivity : AppCompatActivity() {
 
         boxes.forEach { box ->
             canvas.drawRect(
-                box.x1*2.toFloat(),
-                box.y1*2.toFloat(),
-                box.x2*2.toFloat(),
-                box.y2*2.toFloat(),
+                box.x1.toFloat(),
+                box.y1.toFloat(),
+                box.x2.toFloat(),
+                box.y2.toFloat(),
                 paint
             )
         }
@@ -586,6 +624,207 @@ class MainActivity : AppCompatActivity() {
     }
 
 
+
+    private fun convertToGrayscale(bitmap: Bitmap): Bitmap {
+        val width = bitmap.width
+        val height = bitmap.height
+        val grayBitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
+
+        val pixels = IntArray(width * height)
+        bitmap.getPixels(pixels, 0, width, 0, 0, width, height)
+
+        for (i in pixels.indices) {
+            val pixel = pixels[i]
+            val r = (pixel shr 16) and 0xFF
+            val g = (pixel shr 8) and 0xFF
+            val b = pixel and 0xFF
+
+            // Convert to grayscale using luminance formula
+            val gray = (0.299 * r + 0.587 * g + 0.114 * b).toInt()
+            pixels[i] = (0xFF shl 24) or (gray shl 16) or (gray shl 8) or gray
+        }
+
+        grayBitmap.setPixels(pixels, 0, width, 0, 0, width, height)
+        return grayBitmap
+    }
+
+    private fun getImagePatch(grayBitmap: Bitmap, box: TextBox): Bitmap {
+        Log.d(TAG, "Extracting patch from ${grayBitmap.width}x${grayBitmap.height} bitmap")
+        Log.d(TAG, "Requested box: (${box.x1},${box.y1}) to (${box.x2},${box.y2})")
+
+        // Add some padding to improve recognition
+        val padding = 5
+
+        // Clamp coordinates to valid ranges with padding
+        val left = maxOf(0, box.x1 - padding)
+        val top = maxOf(0, box.y1 - padding)
+        val right = minOf(grayBitmap.width, box.x2 + padding)
+        val bottom = minOf(grayBitmap.height, box.y2 + padding)
+
+        val width = right - left
+        val height = bottom - top
+
+        Log.d(TAG, "Clamped coordinates: ($left,$top) to ($right,$bottom)")
+        Log.d(TAG, "Final patch size: ${width}x${height}")
+
+        // Ensure minimum dimensions
+        if (width <= 0 || height <= 0) {
+            Log.e(TAG, "Invalid patch dimensions: ${width}x${height}")
+            throw IllegalArgumentException("Invalid crop dimensions: ${width}x${height}")
+        }
+
+        return Bitmap.createBitmap(grayBitmap, left, top, width, height)
+    }
+
+    private fun recognizerPreprocess(imagePatch: Bitmap): OnnxTensor {
+        // EasyOCR recognition preprocessing: resize to height 64, keep aspect ratio
+        val targetHeight = 64 // 64
+        val aspectRatio = imagePatch.width.toFloat() / imagePatch.height.toFloat()
+        val targetWidth = (targetHeight * aspectRatio).toInt()
+
+        // Ensure minimum width
+        val minWidth = 16
+        val adjustedTargetWidth = maxOf(minWidth, targetWidth)
+
+        Log.d(TAG, "Recognition preprocessing: ${imagePatch.width}x${imagePatch.height} -> ${adjustedTargetWidth}x${targetHeight}")
+
+        // Resize with proper interpolation
+        val resized = Bitmap.createScaledBitmap(imagePatch, adjustedTargetWidth, targetHeight, true)
+
+        // Pad to fixed width (common EasyOCR width is around 200-400, but you mentioned 1000)
+        val paddedWidth = 1000
+        val padded = Bitmap.createBitmap(paddedWidth, targetHeight, Bitmap.Config.ARGB_8888)
+        val canvas = Canvas(padded)
+
+        // Use white background for better text recognition
+        canvas.drawColor(Color.WHITE)
+
+        // Center the text horizontally (optional, you can also left-align)
+        val xOffset = 0f // Left align: 0f, Center: (paddedWidth - adjustedTargetWidth) / 2f
+        canvas.drawBitmap(resized, xOffset, 0f, null)
+
+        // Convert to tensor [1, 1, 64, 1000] for grayscale
+        val pixels = IntArray(paddedWidth * targetHeight)
+        padded.getPixels(pixels, 0, paddedWidth, 0, 0, paddedWidth, targetHeight)
+
+        val floatArray = FloatArray(paddedWidth * targetHeight)
+
+        for (i in pixels.indices) {
+            val pixel = pixels[i]
+            // Extract grayscale value (R channel since it's already grayscale)
+            val gray = (pixel shr 16) and 0xFF
+
+            // Normalize to [-1, 1] or [0, 1] depending on your model
+            // Try both normalizations to see which works better:
+            //floatArray[i] = (gray - 127.5f) / 127.5f // [-1, 1] normalization
+            floatArray[i] = gray / 255.0f // [0, 1] normalization
+        }
+
+        val shape = longArrayOf(1, 1, targetHeight.toLong(), paddedWidth.toLong())
+        return OnnxTensor.createTensor(ortEnvironment, FloatBuffer.wrap(floatArray), shape)
+    }
+
+    private fun recognizerPostprocess(outputs: OrtSession.Result): TextResult {
+        try {
+            if (outputs.size() == 0) {
+                Log.e(TAG, "No recognition outputs received")
+                return TextResult("", 0.0f)
+            }
+
+            val output = outputs[0] as OnnxTensor
+            val outputData = output.floatBuffer.array()
+            val outputShape = output.info.shape
+
+            Log.d(TAG, "Recognition output shape: ${outputShape?.contentToString()}")
+            Log.d(TAG, "Recognition output size: ${outputData.size}")
+
+            if (outputShape == null || outputShape.size < 3) {
+                Log.e(TAG, "Invalid output shape for recognition")
+                return TextResult("", 0.0f)
+            }
+
+            // Handle different possible output shapes
+            val batchSize = outputShape[0].toInt()
+            val seqLength = outputShape[1].toInt()
+            val vocabSize = outputShape[2].toInt()
+
+            Log.d(TAG, "Batch: $batchSize, Sequence: $seqLength, Vocab: $vocabSize")
+            Log.e(TAG, "VOCAB output size: ${vocabSize}")
+
+            val text = StringBuilder()
+            val confidenceScores = mutableListOf<Float>()
+            var prevChar = -1
+
+            // CTC decoding (handles repeated characters)
+            for (i in 0 until seqLength) {
+                var maxLogit = -Float.MAX_VALUE
+                var maxIndex = 0
+
+                val baseIdx = i * vocabSize
+                for (j in 0 until vocabSize) {
+                    val logit = outputData[baseIdx + j]
+                    if (logit > maxLogit) {
+                        maxLogit = logit
+                        maxIndex = j
+                    }
+                }
+                // Convert logit to probability (softmax approximation)
+                val confidence = 1.0f / (1.0f + kotlin.math.exp(-maxLogit))
+
+                // CTC decoding: skip blank (index 0) and repeated characters
+                if (maxIndex > 0 && maxIndex != prevChar) {
+                    val char = indexToChar(maxIndex)
+                    if (char.isNotEmpty()) {
+                        text.append(char)
+                        confidenceScores.add(confidence)
+                        Log.d(TAG, "Char: '$char' (index: $maxIndex, confidence: $confidence)")
+                    }
+                }
+
+                prevChar = maxIndex
+            }
+
+            val avgConfidence = if (confidenceScores.isNotEmpty()) {
+                confidenceScores.average().toFloat()
+            } else {
+                0.0f
+            }
+
+            Log.d(TAG, "Decoded text: '${text.toString()}' (avg confidence: $avgConfidence)")
+            return TextResult(text.toString(), avgConfidence)
+
+        } catch (e: Exception) {
+            Log.e(TAG, "Error in recognition postprocess: ${e.message}")
+            e.printStackTrace()
+            return TextResult("", 0.0f)
+        }
+    }
+
+    private fun indexToChar(index: Int): String {
+        Log.e(TAG, "index ${index}")
+        val chars = "0123456789abcdefghijklmnopqrstuvwxyz"
+        return if (index > 0 && index <= chars.length) {
+            chars[index - 1].toString()
+        } else ""
+    }
+
+    private fun runRecognition(inputTensor: OnnxTensor): OrtSession.Result {
+        val startTime = System.currentTimeMillis()
+        val inputName = decoderSession.inputNames.first()
+        val inputs = mapOf(inputName to inputTensor)
+        val outputs = decoderSession.run(inputs)
+        val inferenceTime = System.currentTimeMillis() - startTime
+
+        Log.d(TAG, "Recognition inference: ${inferenceTime}ms")
+
+        outputs.forEachIndexed { idx, output ->
+            val tensor = output.value as OnnxTensor
+            val shape = tensor.info.shape
+            Log.d(TAG, "Recognition output[$idx] shape: ${shape?.contentToString()}")
+        }
+
+        return outputs
+    }
 
 
 
