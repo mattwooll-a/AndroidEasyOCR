@@ -19,3 +19,7 @@ TODO
 - display the expected output
 
 I doubt anyone is seeing this but DM me or email at mattwooll.a@gmail.com for any ideas/suggestions, or if you want to understand the back bone
+
+Recommended reading:
+-	https://github.com/quic/ai-hub-models/tree/main/qai_hub_models/models/easyocr 
+-	https://github.com/JaidedAI/EasyOCR
