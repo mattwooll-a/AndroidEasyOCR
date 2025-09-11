@@ -19,8 +19,8 @@ class MainActivity : AppCompatActivity() {
     private lateinit var detectorSession: OrtSession
     private lateinit var decoderSession: OrtSession
 
-    private val textThreshold = 0.8f
-    private val linkThreshold = 0.7f
+    private val textThreshold = 0.5f
+    private val linkThreshold = 0.4f
     data class TextResult(val text: String, val confidence: Float)
     data class RecognitionResult(val box: TextBox, val text: String, val confidence: Float)
     // EasyOCR detector constants
@@ -110,7 +110,7 @@ class MainActivity : AppCompatActivity() {
     private fun runCompleteOCRPipeline() {
         try {
             // Load and process real image
-            val bitmap = assets.open("easydemo.png").use {
+            val bitmap = assets.open("nexttest.png").use {
                 BitmapFactory.decodeStream(it)
             }
 
@@ -131,7 +131,10 @@ class MainActivity : AppCompatActivity() {
             detectorOutputs.forEach { it.value.close() }
 
             val boxedBitmap = drawBoxesOnBitmap(bitmap, textBoxes)
-
+            runOnUiThread {
+                val imageView = findViewById<ImageView>(R.id.resultImageView)
+                imageView.setImageBitmap(boxedBitmap)
+            }
 
             val totalTime = System.currentTimeMillis() - startTime
             Log.d(TAG, "=== EasyOCR RESULTS ===")
@@ -165,7 +168,6 @@ class MainActivity : AppCompatActivity() {
 
                     // Post-process recognition results
                     val textResult = recognizerPostprocess(recognitionOutputs)
-                    recognitionOutputs.forEach { it.value.close() }
 
                     if (textResult.text.isNotBlank() && textResult.confidence > 0.3f) {
                         recognitionResults.add(
@@ -176,6 +178,8 @@ class MainActivity : AppCompatActivity() {
                             "Recognized: '${textResult.text.trim()}' (confidence: ${textResult.confidence})"
                         )
                     }
+                    recognitionOutputs.forEach { it.value.close() }
+
 
                 } catch (e: Exception) {
                     Log.e(TAG, "Error processing text box $index: ${e.message}")
@@ -271,8 +275,8 @@ class MainActivity : AppCompatActivity() {
 
 
                 // Create binary masks
-                val textMask = createBinaryMask(textScores, 0.6f)
-                val linkMask = createBinaryMask(linkScores, 0.4f)
+                val textMask = createBinaryMask(textScores, textThreshold)
+                val linkMask = createBinaryMask(linkScores, linkThreshold)
 
                 // Apply morphological operations to clean up the masks
                 val cleanedTextMask = applyMorphologicalOperations(textMask)
@@ -653,7 +657,7 @@ class MainActivity : AppCompatActivity() {
         Log.d(TAG, "Requested box: (${box.x1},${box.y1}) to (${box.x2},${box.y2})")
 
         // Add some padding to improve recognition
-        val padding = 5
+        val padding = 20
 
         // Clamp coordinates to valid ranges with padding
         val left = maxOf(0, box.x1 - padding)
@@ -713,11 +717,15 @@ class MainActivity : AppCompatActivity() {
             val pixel = pixels[i]
             // Extract grayscale value (R channel since it's already grayscale)
             val gray = (pixel shr 16) and 0xFF
+            val invertedGray = 255 - gray
 
             // Normalize to [-1, 1] or [0, 1] depending on your model
+            // Option 1: Normalize to [-1, 1]
+            //floatArray[i] = (invertedGray - 127.5f) / 127.5f // [-1, 1] normalization
+            // Normalize to [-1, 1] or [0, 1] depending on your model
             // Try both normalizations to see which works better:
-            //floatArray[i] = (gray - 127.5f) / 127.5f // [-1, 1] normalization
-            floatArray[i] = gray / 255.0f // [0, 1] normalization
+            floatArray[i] = (gray - 127.5f) / 127.5f // [-1, 1] normalization
+            //floatArray[i] = invertedGray / 255.0f // [0, 1] normalization
         }
 
         val shape = longArrayOf(1, 1, targetHeight.toLong(), paddedWidth.toLong())
@@ -762,12 +770,15 @@ class MainActivity : AppCompatActivity() {
 
                 val baseIdx = i * vocabSize
                 for (j in 0 until vocabSize) {
+
                     val logit = outputData[baseIdx + j]
                     if (logit > maxLogit) {
                         maxLogit = logit
                         maxIndex = j
+
                     }
                 }
+
                 // Convert logit to probability (softmax approximation)
                 val confidence = 1.0f / (1.0f + kotlin.math.exp(-maxLogit))
 
@@ -802,7 +813,7 @@ class MainActivity : AppCompatActivity() {
 
     private fun indexToChar(index: Int): String {
         Log.e(TAG, "index ${index}")
-        val chars = "0123456789abcdefghijklmnopqrstuvwxyz"
+        val chars = "0123456789.,;:!?'\"-()[]{}+*/=<>@#\$%&_|~`^\\  ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz"
         return if (index > 0 && index <= chars.length) {
             chars[index - 1].toString()
         } else ""
