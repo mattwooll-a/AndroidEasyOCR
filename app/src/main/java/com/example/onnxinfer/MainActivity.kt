@@ -110,7 +110,7 @@ class MainActivity : AppCompatActivity() {
     private fun runCompleteOCRPipeline() {
         try {
             // Load and process real image
-            val bitmap = assets.open("nexttest.png").use {
+            val bitmap = assets.open("lowerdemo.png").use {
                 BitmapFactory.decodeStream(it)
             }
 
@@ -155,10 +155,10 @@ class MainActivity : AppCompatActivity() {
 
                     // Extract image patch for this text box
                     val imagePatch = getImagePatch(grayBitmap, box)
-                    runOnUiThread {
-                        val imageView = findViewById<ImageView>(R.id.resultImageView)
-                        imageView.setImageBitmap(imagePatch)
-                    }
+//                    runOnUiThread {
+//                        val imageView = findViewById<ImageView>(R.id.resultImageView)
+//                        imageView.setImageBitmap(imagePatch)
+//                    }
                     // Preprocess for recognition
                     val recognitionInput = recognizerPreprocess(imagePatch)
 
@@ -657,7 +657,7 @@ class MainActivity : AppCompatActivity() {
         Log.d(TAG, "Requested box: (${box.x1},${box.y1}) to (${box.x2},${box.y2})")
 
         // Add some padding to improve recognition
-        val padding = 20
+        val padding = 30
 
         // Clamp coordinates to valid ranges with padding
         val left = maxOf(0, box.x1 - padding)
@@ -724,7 +724,7 @@ class MainActivity : AppCompatActivity() {
             //floatArray[i] = (invertedGray - 127.5f) / 127.5f // [-1, 1] normalization
             // Normalize to [-1, 1] or [0, 1] depending on your model
             // Try both normalizations to see which works better:
-            floatArray[i] = (gray - 127.5f) / 127.5f // [-1, 1] normalization
+            floatArray[i] = (invertedGray - 127.5f) / 127.5f // [-1, 1] normalization
             //floatArray[i] = invertedGray / 255.0f // [0, 1] normalization
         }
 
@@ -788,7 +788,7 @@ class MainActivity : AppCompatActivity() {
                     if (char.isNotEmpty()) {
                         text.append(char)
                         confidenceScores.add(confidence)
-                        Log.d(TAG, "Char: '$char' (index: $maxIndex, confidence: $confidence)")
+                        //Log.d(TAG, "Char: '$char' (index: $maxIndex, confidence: $confidence)")
                     }
                 }
 
@@ -812,7 +812,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun indexToChar(index: Int): String {
-        Log.e(TAG, "index ${index}")
+        //Log.e(TAG, "index ${index}")
         val chars = "0123456789.,;:!?'\"-()[]{}+*/=<>@#\$%&_|~`^\\  ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz"
         return if (index > 0 && index <= chars.length) {
             chars[index - 1].toString()
